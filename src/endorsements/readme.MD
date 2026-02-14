@@ -6,6 +6,8 @@
 - Considered setting db_table to 'endorsement' but decided to follow the pattern of the other entities in the codebase.
 - Fixed ordering to `-created_date` given it is what the only use case we have currently requires and to avoid 
   creating too many indexes in the database.
+- Decided to enforce `endorser_user` or `endorsed_user` as required list query parameter since it matches our uses 
+  cases, matches the indexes in the database, prevents querying the entire table and simplifies caching. 
 - Considered creating an `EndorsementQualifier` model but decided to keep it simple using a `CharField` with 
   `TextChoices`. We can easily migrate this to a separated model later if needed without losing data.
 - Considered always including `endorser_author` in the response to simplify the code, but decided to make it an 

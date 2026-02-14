@@ -48,7 +48,7 @@ class EndorsementsViewSetTests(APITestCase):
         }
 
     def test_list_endorsements_allows_unauthenticated_read(self):
-        """Anyone can list endorsements without logging in."""
+        """Anyone can list endorsements when endorsed_user is provided."""
         endorsement = Endorsement.objects.create(
             endorser_user=self.endorser,
             endorsed_user=self.endorsed,
@@ -56,26 +56,26 @@ class EndorsementsViewSetTests(APITestCase):
             anecdote="Worked on a study together.",
         )
 
-        response = self.client.get(self.list_url)
+        response = self.client.get(
+            self.list_url, {"endorsed_user": self.endorsed.id}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         result_ids = [item["id"] for item in _results(response)]
         self.assertIn(endorsement.id, result_ids)
 
-    def test_list_endorsements_filters_by_endorser_user(self):
-        """Filtering by endorser user returns only endorsements from that user."""
+    def test_list_endorsements_rejects_without_endorsed_or_endorser_filter(self):
+        """List requests are rejected when neither endorsed_user nor endorser_user is provided."""
         fixture = self._create_filter_fixture_endorsements()
 
-        response = self.client.get(
-            self.list_url, {"endorser_user": self.endorser.id}, format="json"
-        )
+        response = self.client.get(self.list_url, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        result_ids = {item["id"] for item in _results(response)}
-        self.assertSetEqual(
-            result_ids,
-            {fixture["endorsement_1"].id, fixture["endorsement_2"].id},
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["non_field_errors"][0],
+            "At least one of 'endorsed_user' or 'endorser_user' query parameters is required.",
         )
+        self.assertIsNotNone(fixture["endorsement_1"].id)
 
     def test_list_endorsements_filters_by_endorsed_user(self):
         """Filtering by an endorsed user returns only endorsements for that user."""
@@ -109,8 +109,8 @@ class EndorsementsViewSetTests(APITestCase):
         result_ids = [item["id"] for item in _results(response)]
         self.assertEqual(result_ids, [fixture["endorsement_1"].id])
 
-    def test_list_endorsements_filters_work_for_unauthenticated_requests(self):
-        """Anonymous users can still use list filters on endorsements."""
+    def test_list_endorsements_filters_by_endorser_user(self):
+        """Filtering by endorser user returns only endorsements from that user."""
         fixture = self._create_filter_fixture_endorsements()
 
         response = self.client.get(
@@ -129,7 +129,9 @@ class EndorsementsViewSetTests(APITestCase):
             qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
         )
 
-        response = self.client.get(self.list_url)
+        response = self.client.get(
+            self.list_url, {"endorsed_user": self.endorsed.id}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         first_result = _results(response)[0]
@@ -144,7 +146,12 @@ class EndorsementsViewSetTests(APITestCase):
         )
 
         response = self.client.get(
-            self.list_url, {"include_endorser_author": "true"}, format="json"
+            self.list_url,
+            {
+                "include_endorser_author": "true",
+                "endorsed_user": self.endorsed.id,
+            },
+            format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)

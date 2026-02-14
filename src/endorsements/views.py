@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
 
 from endorsements.models import Endorsement
@@ -20,8 +21,10 @@ class IsEndorsementOwner(BasePermission):
 
 class EndorsementsViewSet(viewsets.ModelViewSet):
     """
-    Endorsements can be filtered by endorser and endorsed user:
-    Ex: GET /api/endorsements/?endorser_user=1&endorsed_user=2
+    Endorsements must be filtered by endorser or endorsed user (or both):
+    Ex: GET /api/endorsements/?endorser_user=1 (endorsements given by user 1)
+    Ex: GET /api/endorsements/?endorsed_user=2 (endorsements received by user 2)
+    Ex: GET /api/endorsements/?endorser_user=1&endorsed_user=2 (can be used to check if user 1 endorsed user 2)
 
     It supports including a minimally hydrated endorser's author profile in the response:
     Ex: GET /api/endorsements/1/?include_endorser_author=true
@@ -33,6 +36,21 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['endorser_user', 'endorsed_user']
     permission_classes = [IsAuthenticatedOrReadOnly, IsEndorsementOwner]
+    REQUIRED_LIST_FILTERS = ("endorsed_user", "endorser_user")
+
+    def _ensure_required_list_filter_present(self):
+        has_required_filter = any(
+            self.request.query_params.get(param)
+            for param in self.REQUIRED_LIST_FILTERS
+        )
+        if not has_required_filter:
+            raise ValidationError(
+                {
+                    "non_field_errors": [
+                        "At least one of 'endorsed_user' or 'endorser_user' query parameters is required."
+                    ]
+                }
+            )
 
     def _is_include_endorser_author(self) -> bool:
         # ensure we only include the author profile if the parameter is exactly the string "true" or "True"
@@ -54,6 +72,10 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         ctx = super().get_serializer_context()
         ctx[INCLUDE_ENDORSER_AUTHOR_CTX_KEY] = self._is_include_endorser_author()
         return ctx
+
+    def list(self, request, *args, **kwargs):
+        self._ensure_required_list_filter_present()
+        return super().list(request, *args, **kwargs)
 
     def get_serializer_class(self):
         if self.action == "create":

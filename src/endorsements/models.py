@@ -51,8 +51,8 @@ class Endorsement(models.Model):
             ),
         ]
         indexes = [
-            # for returning endorsements given by a given user
-            models.Index(fields=["endorsed_user", "-created_date"], name="endorse_recv_created_ix"),
             # for returning endorsements received by a given user
+            models.Index(fields=["endorsed_user", "-created_date"], name="endorse_recv_created_ix"),
+            # for returning endorsements given by a given user
             models.Index(fields=["endorser_user", "-created_date"], name="endorse_give_created_ix"),
         ]
