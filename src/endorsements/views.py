@@ -1,3 +1,4 @@
+from django.db.models import Exists, OuterRef
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
@@ -58,7 +59,16 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         return param.lower() == "true"
 
     def get_queryset(self):
-        qs = Endorsement.objects.all().order_by("-created_date")
+        # queryset for checking reciprocal endorsements
+        reciprocal_endorsement_qs = Endorsement.objects.filter(
+            endorser_user_id=OuterRef("endorsed_user_id"),
+            endorsed_user_id=OuterRef("endorser_user_id"),
+        )
+
+        # base queryset with is_reciprocal annotation
+        qs = Endorsement.objects.annotate(
+            is_reciprocal=Exists(reciprocal_endorsement_qs)
+        ).order_by("-created_date")
 
         if self._is_include_endorser_author():
             # avoid N+1 queries by eager loading author profile

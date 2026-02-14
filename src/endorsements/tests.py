@@ -137,6 +137,47 @@ class EndorsementsViewSetTests(APITestCase):
         first_result = _results(response)[0]
         self.assertNotIn("endorser_author", first_result)
 
+    def test_list_endorsements_includes_is_reciprocal_false_without_reverse_endorsement(self):
+        """Reciprocal flag is present and false when reverse endorsement does not exist."""
+        Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+
+        response = self.client.get(
+            self.list_url, {"endorsed_user": self.endorsed.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_result = _results(response)[0]
+        self.assertIn("is_reciprocal", first_result)
+        self.assertFalse(first_result["is_reciprocal"])
+
+    def test_list_endorsements_includes_is_reciprocal_true_with_reverse_endorsement(self):
+        """Reciprocal flag is true when both users endorse each other."""
+        Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        Endorsement.objects.create(
+            endorser_user=self.endorsed,
+            endorsed_user=self.endorser,
+            qualifier=Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+        )
+
+        response = self.client.get(
+            self.list_url,
+            {"endorser_user": self.endorser.id, "endorsed_user": self.endorsed.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_result = _results(response)[0]
+        self.assertIn("is_reciprocal", first_result)
+        self.assertTrue(first_result["is_reciprocal"])
+
     def test_list_endorsements_includes_endorser_author_when_requested(self):
         """Endorser author payload is included when include_endorser_author=true."""
         Endorsement.objects.create(
@@ -253,6 +294,26 @@ class EndorsementsViewSetTests(APITestCase):
         endorsement = Endorsement.objects.get(id=response.data["id"])
         self.assertEqual(endorsement.endorser_user, self.endorser)
         self.assertEqual(endorsement.endorsed_user, self.endorsed)
+
+    def test_create_endorsement_response_includes_is_reciprocal(self):
+        """Create responses include reciprocal state for the created endorsement."""
+        Endorsement.objects.create(
+            endorser_user=self.endorsed,
+            endorsed_user=self.endorser,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        payload = {
+            "endorsed_user": self.endorsed.id,
+            "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+            "anecdote": "Met at a conference.",
+        }
+        self.client.force_authenticate(user=self.endorser)
+
+        response = self.client.post(self.list_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("is_reciprocal", response.data)
+        self.assertTrue(response.data["is_reciprocal"])
 
     def test_create_endorsement_rejects_duplicate_for_same_user_pair(self):
         """A user cannot endorse the same person more than once."""

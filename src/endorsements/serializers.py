@@ -4,16 +4,6 @@ from rest_framework.validators import UniqueTogetherValidator
 from endorsements.models import Endorsement
 from user.serializers import DynamicAuthorSerializer
 
-ENDORSEMENT_FIELDS = [
-    "id",
-    "endorser_user",
-    "endorsed_user",
-    "qualifier",
-    "anecdote",
-    "created_date",
-    "updated_date"
-]
-
 INCLUDE_ENDORSER_AUTHOR_CTX_KEY = "include_endorser_author"
 
 
@@ -21,6 +11,7 @@ class EndorsementSerializer(serializers.ModelSerializer):
     """
     Serializer for the Endorsement model with support for including the endorser's author profile.
     """
+    is_reciprocal = serializers.SerializerMethodField()
     endorser_author = DynamicAuthorSerializer(
         source="endorser_user.author_profile",
         read_only=True,
@@ -34,7 +25,29 @@ class EndorsementSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endorsement
-        fields = [*ENDORSEMENT_FIELDS, "endorser_author"]
+        fields = [
+            "id",
+            "endorser_user",
+            "endorsed_user",
+            "is_reciprocal",
+            "qualifier",
+            "anecdote",
+            "created_date",
+            "updated_date",
+            "endorser_author",
+        ]
+
+    @staticmethod
+    def get_is_reciprocal(obj) -> bool:
+        # prefer queryset annotation to avoid per-row lookups on list/retrieve endpoints.
+        if hasattr(obj, "is_reciprocal"):
+            return bool(obj.is_reciprocal)
+
+        # fallback to manual check if queryset annotation is not available.
+        return Endorsement.objects.filter(
+            endorser_user_id=obj.endorsed_user_id,
+            endorsed_user_id=obj.endorser_user_id,
+        ).exists()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -50,7 +63,7 @@ class EndorsementCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endorsement
-        fields = ENDORSEMENT_FIELDS
+        fields = '__all__'
         validators = [
             UniqueTogetherValidator(
                 queryset=Endorsement.objects.all(),
@@ -81,7 +94,7 @@ class EndorsementUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endorsement
-        fields = ENDORSEMENT_FIELDS
+        fields = '__all__'
 
     def to_representation(self, instance):
         # serialize all fields
