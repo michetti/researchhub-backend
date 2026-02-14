@@ -33,8 +33,8 @@ class Endorsement(models.Model):
         blank=True,
         help_text="A personal anecdote about the relationship.",
     )
-    created_date = models.DateTimeField(auto_now_add=True, editable=False)
-    updated_date = models.DateTimeField(auto_now=True, editable=False)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
