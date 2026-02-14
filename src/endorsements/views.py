@@ -1,3 +1,4 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
 
@@ -22,6 +23,8 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     ViewSet for managing endorsements, including listing, creating, updating, patching, and deleting.
     """
     queryset = Endorsement.objects.all().order_by("-created_date")
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['endorser_user', 'endorsed_user']
     permission_classes = [IsAuthenticatedOrReadOnly, IsEndorsementOwner]
 
     def get_serializer_class(self):

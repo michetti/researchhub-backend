@@ -22,6 +22,29 @@ class EndorsementsViewSetTests(APITestCase):
 
         self.list_url = reverse("endorsements-list")
 
+    def _create_filter_fixture_endorsements(self):
+        """Create endorsements that let us test endorser and endorsed filters."""
+        endorsement_1 = Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        endorsement_2 = Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.other_user,
+            qualifier=Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+        )
+        endorsement_3 = Endorsement.objects.create(
+            endorser_user=self.other_user,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+        )
+        return {
+            "endorsement_1": endorsement_1,
+            "endorsement_2": endorsement_2,
+            "endorsement_3": endorsement_3,
+        }
+
     def test_list_endorsements_allows_unauthenticated_read(self):
         """Anyone can list endorsements without logging in."""
         endorsement = Endorsement.objects.create(
@@ -36,6 +59,65 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         result_ids = [item["id"] for item in _results(response)]
         self.assertIn(endorsement.id, result_ids)
+
+    def test_list_endorsements_filters_by_endorser_user(self):
+        """Filtering by endorser user returns only endorsements from that user."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url, {"endorser_user": self.endorser.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result_ids = {item["id"] for item in _results(response)}
+        self.assertSetEqual(
+            result_ids,
+            {fixture["endorsement_1"].id, fixture["endorsement_2"].id},
+        )
+
+    def test_list_endorsements_filters_by_endorsed_user(self):
+        """Filtering by an endorsed user returns only endorsements for that user."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url, {"endorsed_user": self.endorsed.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result_ids = {item["id"] for item in _results(response)}
+        self.assertSetEqual(
+            result_ids,
+            {fixture["endorsement_1"].id, fixture["endorsement_3"].id},
+        )
+
+    def test_list_endorsements_filters_by_endorser_and_endorsed_intersection(self):
+        """Applying both filters returns only the matching endorsement pair."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url,
+            {
+                "endorser_user": self.endorser.id,
+                "endorsed_user": self.endorsed.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result_ids = [item["id"] for item in _results(response)]
+        self.assertEqual(result_ids, [fixture["endorsement_1"].id])
+
+    def test_list_endorsements_filters_work_for_unauthenticated_requests(self):
+        """Anonymous users can still use list filters on endorsements."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url, {"endorser_user": self.other_user.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        result_ids = [item["id"] for item in _results(response)]
+        self.assertEqual(result_ids, [fixture["endorsement_3"].id])
 
     def test_create_endorsement_requires_authentication(self):
         """Creating an endorsement is blocked for anonymous users."""
