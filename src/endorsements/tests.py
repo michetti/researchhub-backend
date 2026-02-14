@@ -1,4 +1,6 @@
+from django.db import connection
 from django.urls import reverse
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -118,6 +120,103 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         result_ids = [item["id"] for item in _results(response)]
         self.assertEqual(result_ids, [fixture["endorsement_3"].id])
+
+    def test_list_endorsements_does_not_include_endorser_author_by_default(self):
+        """Endorser author payload is omitted unless explicitly requested."""
+        Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_result = _results(response)[0]
+        self.assertNotIn("endorser_author", first_result)
+
+    def test_list_endorsements_includes_endorser_author_when_requested(self):
+        """Endorser author payload is included when include_endorser_author=true."""
+        Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+
+        response = self.client.get(
+            self.list_url, {"include_endorser_author": "true"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_result = _results(response)[0]
+        self.assertIn("endorser_author", first_result)
+        self.assertEqual(
+            set(first_result["endorser_author"].keys()),
+            {"id", "first_name", "last_name", "profile_image"},
+        )
+        self.assertEqual(
+            first_result["endorser_author"]["id"],
+            self.endorser.author_profile.id,
+        )
+
+    def test_list_endorsements_filters_work_with_include_endorser_author(self):
+        """Filtering still works when include_endorser_author=true is provided."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url,
+            {
+                "include_endorser_author": "true",
+                "endorsed_user": self.endorsed.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = _results(response)
+        result_ids = {item["id"] for item in results}
+        self.assertSetEqual(
+            result_ids,
+            {fixture["endorsement_1"].id, fixture["endorsement_3"].id},
+        )
+        self.assertTrue(all("endorser_author" in item for item in results))
+
+    def test_include_endorser_author_query_count_is_constant_as_results_grow(self):
+        """Including endorser author should not introduce per-row query growth."""
+        small_endorsed_user = create_random_default_user("small-endorsed")
+        large_endorsed_user = create_random_default_user("large-endorsed")
+
+        for idx in range(3):
+            Endorsement.objects.create(
+                endorser_user=create_random_default_user(f"small-endorser-{idx}"),
+                endorsed_user=small_endorsed_user,
+                qualifier=Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+            )
+
+        for idx in range(15):
+            Endorsement.objects.create(
+                endorser_user=create_random_default_user(f"large-endorser-{idx}"),
+                endorsed_user=large_endorsed_user,
+                qualifier=Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+            )
+
+        params_small = {
+            "include_endorser_author": "true",
+            "endorsed_user": small_endorsed_user.id,
+        }
+        params_large = {
+            "include_endorser_author": "true",
+            "endorsed_user": large_endorsed_user.id,
+        }
+
+        with CaptureQueriesContext(connection) as small_ctx:
+            small_response = self.client.get(self.list_url, params_small, format="json")
+        with CaptureQueriesContext(connection) as large_ctx:
+            large_response = self.client.get(self.list_url, params_large, format="json")
+
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(small_ctx), len(large_ctx))
 
     def test_create_endorsement_requires_authentication(self):
         """Creating an endorsement is blocked for anonymous users."""

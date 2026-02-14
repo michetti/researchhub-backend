@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from endorsements.models import Endorsement
-
+from user.serializers import DynamicAuthorSerializer
 
 ENDORSEMENT_FIELDS = [
     "id",
@@ -14,14 +14,32 @@ ENDORSEMENT_FIELDS = [
     "updated_date"
 ]
 
+INCLUDE_ENDORSER_AUTHOR_CTX_KEY = "include_endorser_author"
+
 
 class EndorsementSerializer(serializers.ModelSerializer):
     """
-    Serializer for the Endorsement model.
+    Serializer for the Endorsement model with support for including the endorser's author profile.
     """
+    endorser_author = DynamicAuthorSerializer(
+        source="endorser_user.author_profile",
+        read_only=True,
+        _include_fields=[
+            "id",
+            "first_name",
+            "last_name",
+            "profile_image",
+        ],
+    )
+
     class Meta:
         model = Endorsement
-        fields = ENDORSEMENT_FIELDS
+        fields = [*ENDORSEMENT_FIELDS, "endorser_author"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.context.get(INCLUDE_ENDORSER_AUTHOR_CTX_KEY):
+            self.fields.pop("endorser_author", None)
 
 
 class EndorsementCreateSerializer(serializers.ModelSerializer):
