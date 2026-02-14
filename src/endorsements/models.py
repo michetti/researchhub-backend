@@ -22,7 +22,6 @@ class Endorsement(models.Model):
         on_delete=models.CASCADE,
         related_name='endorsements_received',
         help_text="The user that was endorsed",
-        editable=False,
     )
     qualifier = models.CharField(
         max_length=64,
