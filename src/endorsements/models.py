@@ -30,6 +30,7 @@ class Endorsement(models.Model):
         help_text="Context for how the endorser knows the endorsed user.",
     )
     anecdote = models.TextField(
+        max_length=500,
         blank=True,
         help_text="A personal anecdote about the relationship.",
     )
