@@ -16,6 +16,7 @@ from django.conf import settings
 from django.urls import include, path, re_path
 from rest_framework import routers
 
+import endorsements.views
 import hub.views
 import invite.views as invite_views
 import mailing_list.views
@@ -77,6 +78,8 @@ router.register(
 )
 
 router.register(r"author", author_views.AuthorViewSet, basename="author")
+
+router.register(r"endorsements", endorsements.views.EndorsementsViewSet, basename="endorsements")
 
 router.register(r"hub", hub.views.HubViewSet, basename="hub")
 
