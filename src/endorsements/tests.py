@@ -178,6 +178,21 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertIn("is_reciprocal", first_result)
         self.assertTrue(first_result["is_reciprocal"])
 
+    def test_list_endorsements_includes_authority_score(self):
+        """Authority score reflects how many endorsements the endorser user has given."""
+        fixture = self._create_filter_fixture_endorsements()
+
+        response = self.client.get(
+            self.list_url, {"endorsed_user": self.endorsed.id}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        score_by_id = {
+            item["id"]: item["authority_score"] for item in _results(response)
+        }
+        self.assertEqual(score_by_id[fixture["endorsement_1"].id], 2)
+        self.assertEqual(score_by_id[fixture["endorsement_3"].id], 1)
+
     def test_list_endorsements_includes_endorser_author_when_requested(self):
         """Endorser author payload is included when include_endorser_author=true."""
         Endorsement.objects.create(
@@ -314,6 +329,26 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn("is_reciprocal", response.data)
         self.assertTrue(response.data["is_reciprocal"])
+
+    def test_create_endorsement_response_includes_authority_score(self):
+        """Create responses include authority score for the authenticated endorser user."""
+        Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.other_user,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        payload = {
+            "endorsed_user": self.endorsed.id,
+            "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+            "anecdote": "Met at a conference.",
+        }
+        self.client.force_authenticate(user=self.endorser)
+
+        response = self.client.post(self.list_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("authority_score", response.data)
+        self.assertEqual(response.data["authority_score"], 2)
 
     def test_create_endorsement_rejects_duplicate_for_same_user_pair(self):
         """A user cannot endorse the same person more than once."""

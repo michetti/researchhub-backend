@@ -1,4 +1,4 @@
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef, Subquery
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
@@ -65,9 +65,19 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
             endorsed_user_id=OuterRef("endorser_user_id"),
         )
 
-        # base queryset with is_reciprocal annotation
+        # queryset for calculating endorser authority score based on number of endorsements
+        endorser_authority_score_qs = (
+            Endorsement.objects.filter(endorser_user_id=OuterRef("endorser_user_id"))
+            .order_by()  # safeguard to ensure no ordering in case it's set elsewhere (Meta.ordering, for example)
+            .values("endorser_user_id")
+            .annotate(score=Count("id"))
+            .values("score")[:1]
+        )
+
+        # base queryset with relationship annotations
         qs = Endorsement.objects.annotate(
-            is_reciprocal=Exists(reciprocal_endorsement_qs)
+            is_reciprocal=Exists(reciprocal_endorsement_qs),
+            authority_score=Subquery(endorser_authority_score_qs),
         ).order_by("-created_date")
 
         if self._is_include_endorser_author():
