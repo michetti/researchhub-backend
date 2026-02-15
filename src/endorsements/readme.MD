@@ -17,6 +17,9 @@
   calculation based on PageRank, for example.
 - Implemented caching for endorsements list endpoint. Decided to go with a TTL of 5 minutes and cache only the first 
   page of results. The cache key is based on a prefix and the normalized query parameters.
+- Considered model signals (`post_save`/`post_delete`) for cache invalidation, but kept invalidation in the API write
+  path for the first version to keep behavior simple and explicit. Signals also would not fully guarantee invalidation
+  for all write paths (for example, bulk operations or raw SQL).
 - Added type hints and override annotations as the newer code seems to be using them.
 - Added create-only per-user throttling with burst and daily limits to prevent spam while keeping reads unrestricted.
 - Added a serializer-level `AlreadyEndorsedConflict` (`409`) and reused it in `perform_create` so duplicate endorsement
