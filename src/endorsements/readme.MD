@@ -1,26 +1,16 @@
 # Endorsements
 
 ## Technical decisions
-- Initially created Endorsement code inside the user app, but moved into its own app to avoid bloating the user app.
-- Considered using UUIDs for endorsements but decided to follow the pattern of the other entities in the codebase.
-- Considered setting db_table to 'endorsement' but decided to follow the pattern of the other entities in the codebase.
-- Fixed ordering to `-created_date` given it is what the only use case we have currently requires and to avoid 
-  creating too many indexes in the database.
-- Decided to enforce `endorser_user` or `endorsed_user` as required list query parameter since it matches our uses 
-  cases, matches the indexes in the database, prevents querying the entire table and simplifies caching. 
-- Considered creating an `EndorsementQualifier` model but decided to keep it simple using a `CharField` with 
-  `TextChoices`. We can easily migrate this to a separated model later if needed without losing data.
-- Considered always including `endorser_author` in the response to simplify the code, but decided to make it an 
-  optional parameter instead to make the API more flexible.
-- Returning `authority_score` field in the response as a way to indicate how meaningful the endorsement is. For now, 
-  it is based on the number of endorsements for the endorser user. Later it should be changed to a more sophisticated 
-  calculation based on PageRank, for example.
-- Implemented caching for endorsements list endpoint. Decided to go with a TTL of 5 minutes and cache only the first 
-  page of results. The cache key is based on a prefix and the normalized query parameters.
-- Considered model signals (`post_save`/`post_delete`) for cache invalidation, but kept invalidation in the API write
-  path for the first version to keep behavior simple and explicit. Signals also would not fully guarantee invalidation
-  for all write paths (for example, bulk operations or raw SQL).
-- Added type hints and override annotations as the newer code seems to be using them.
-- Added create-only per-user throttling with burst and daily limits to prevent spam while keeping reads unrestricted.
-- Added a serializer-level `AlreadyEndorsedConflict` (`409`) and reused it in `perform_create` so duplicate endorsement
-  errors are consistent for both pre-save validation and DB race-condition (`IntegrityError`) paths.
+- Initially created endorsement code inside the `user` app, but moved it into its own app to avoid bloating `user`.
+- Considered using UUIDs for endorsements, but decided to follow the pattern of the other entities in the codebase.
+- Considered setting `db_table` to `endorsement`, but decided to follow the pattern of the other entities in the codebase.
+- Fixed ordering to `-created_date` because it matches the current use case and avoids creating too many indexes.
+- Enforced `endorser_user` or `endorsed_user` as required list query parameters because this matches our use cases, aligns with the indexes, prevents querying the entire table, and simplifies caching.
+- Considered creating an `EndorsementQualifier` model, but decided to keep it simple using a `CharField` with `TextChoices`. We can migrate to a separate model later without losing data.
+- Considered always including `endorser_author` in responses to simplify code, but decided to keep it optional for flexibility.
+- Returned `authority_score` in responses to indicate how meaningful an endorsement is. For now, it is based on the number of endorsements for the endorser user; later it can be replaced with a more sophisticated calculation (for example, based on PageRank).
+- Implemented caching for the endorsements list endpoint with a 5-minute TTL and first-page-only caching. The cache key is based on a prefix and normalized query parameters.
+- Considered model signals (`post_save`/`post_delete`) for cache invalidation, but kept invalidation in the API write path for the first version to keep behavior simple and explicit. Signals would also not fully guarantee invalidation for all write paths (for example, bulk operations or raw SQL).
+- Added type hints and `@override` annotations, following patterns in newer code.
+- Added create-only per-user throttling with burst and daily limits to reduce spam while keeping reads unrestricted.
+- Added serializer-level `AlreadyEndorsedConflict` (`409`) and reused it in `perform_create` so duplicate endorsement errors are consistent across pre-save validation and DB race-condition (`IntegrityError`) paths.
