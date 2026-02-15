@@ -68,6 +68,27 @@ class EndorsementsViewSetTests(APITestCase):
         result_ids = [item["id"] for item in _results(response)]
         self.assertIn(endorsement.id, result_ids)
 
+    def test_qualifiers_endpoint_returns_ordered_code_and_label_list(self) -> None:
+        """Qualifier endpoint should expose code/label pairs in declaration order."""
+        url = reverse("endorsements-qualifiers")
+
+        response = self.client.get(url, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected = [
+            {"code": code, "label": label}
+            for code, label in Endorsement.Qualifier.choices
+        ]
+        self.assertEqual(response.data, expected)
+
+    def test_qualifiers_endpoint_allows_unauthenticated_read(self) -> None:
+        """Qualifier endpoint is read-only and available to anonymous users."""
+        url = reverse("endorsements-qualifiers")
+
+        response = self.client.get(url, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_list_endorsements_rejects_without_endorsed_or_endorser_filter(self) -> None:
         """List requests are rejected when neither endorsed_user nor endorser_user is provided."""
         fixture = self._create_filter_fixture_endorsements()

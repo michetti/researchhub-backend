@@ -3,6 +3,7 @@ from typing import Any, override
 from django.db.models import Count, Exists, OuterRef, Subquery, QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, serializers
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
@@ -135,6 +136,14 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         ctx = super().get_serializer_context()
         ctx[INCLUDE_ENDORSER_AUTHOR_CTX_KEY] = self._is_include_endorser_author()
         return ctx
+
+    @action(detail=False, methods=["get"], url_path="qualifiers", url_name="qualifiers")
+    def qualifiers(self, request, *args, **kwargs) -> Response:
+        data = [
+            {"code": code, "label": label}
+            for code, label in Endorsement.Qualifier.choices
+        ]
+        return Response(data)
 
     @override
     def list(self, request, *args, **kwargs) -> Response:
