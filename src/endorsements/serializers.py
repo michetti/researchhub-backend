@@ -76,7 +76,15 @@ class EndorsementCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endorsement
-        fields = '__all__'
+        fields = [
+            "id",
+            "endorser_user",
+            "endorsed_user",
+            "qualifier",
+            "anecdote",
+            "created_date",
+            "updated_date",
+        ]
         validators = [
             UniqueTogetherValidator(
                 queryset=Endorsement.objects.all(),
@@ -107,7 +115,15 @@ class EndorsementUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Endorsement
-        fields = '__all__'
+        fields = [
+            "id",
+            "endorser_user",
+            "endorsed_user",
+            "qualifier",
+            "anecdote",
+            "created_date",
+            "updated_date",
+        ]
 
     def to_representation(self, instance) -> dict:
         # serialize all fields
