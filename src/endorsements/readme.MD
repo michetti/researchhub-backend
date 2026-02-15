@@ -8,7 +8,7 @@
 - Enforced `endorser_user` or `endorsed_user` as required list query parameters because this matches our use cases, aligns with the indexes, prevents querying the entire table, and simplifies caching.
 - Considered creating an `EndorsementQualifier` model, but decided to keep it simple using a `CharField` with `TextChoices`. We can migrate to a separate model later without losing data.
 - Considered always including `endorser_author` in responses to simplify code, but decided to keep it optional for flexibility.
-- Returned `authority_score` in responses to indicate how meaningful an endorsement is. For now, it is based on the number of endorsements for the endorser user; later it can be replaced with a more sophisticated calculation (for example, based on PageRank).
+- Returned `authority_score` in responses to indicate how meaningful an endorsement is. For now, it is based on the number of endorsements received by the endorser user; later it can be replaced with a more sophisticated calculation (for example, based on PageRank).
 - Implemented caching for the endorsements list endpoint with a 5-minute TTL and first-page-only caching. The cache key is based on a prefix and normalized query parameters.
 - Considered model signals (`post_save`/`post_delete`) for cache invalidation, but kept invalidation in the API write path for the first version to keep behavior simple and explicit. Signals would also not fully guarantee invalidation for all write paths (for example, bulk operations or raw SQL).
 - Added type hints and `@override` annotations, following patterns in newer code.

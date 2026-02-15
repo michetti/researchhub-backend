@@ -1,7 +1,8 @@
 from typing import Any, override
 
 from django.db import IntegrityError
-from django.db.models import Count, Exists, OuterRef, Subquery, QuerySet
+from django.db.models import Count, Exists, OuterRef, QuerySet, Subquery, Value
+from django.db.models.functions import Coalesce
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, serializers
 from rest_framework.decorators import action
@@ -102,11 +103,11 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
             endorsed_user_id=OuterRef("endorser_user_id"),
         )
 
-        # queryset for calculating endorser authority score based on number of endorsements
+        # queryset for calculating endorser authority score based on endorsements received
         endorser_authority_score_qs = (
-            Endorsement.objects.filter(endorser_user_id=OuterRef("endorser_user_id"))
+            Endorsement.objects.filter(endorsed_user_id=OuterRef("endorser_user_id"))
             .order_by()  # safeguard to ensure no ordering in case it's set elsewhere (Meta.ordering, for example)
-            .values("endorser_user_id")
+            .values("endorsed_user_id")
             .annotate(score=Count("id"))
             .values("score")[:1]
         )
@@ -114,7 +115,7 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         # base queryset with relationship annotations
         qs = Endorsement.objects.annotate(
             is_reciprocal=Exists(reciprocal_endorsement_qs),
-            authority_score=Subquery(endorser_authority_score_qs),
+            authority_score=Coalesce(Subquery(endorser_authority_score_qs), Value(0)),
         ).order_by("-created_date")
 
         if self._is_include_endorser_author():

@@ -62,11 +62,11 @@ class EndorsementSerializer(serializers.ModelSerializer):
     def get_authority_score(obj) -> int:
         # prefer queryset annotation to avoid per-row lookups on list / retrieve endpoints.
         if hasattr(obj, "authority_score"):
-            return int(obj.authority_score)
+            return int(obj.authority_score or 0)
 
         # fallback to manual count if queryset annotation is not available.
         return Endorsement.objects.filter(
-            endorser_user_id=obj.endorser_user_id,
+            endorsed_user_id=obj.endorser_user_id,
         ).count()
 
     def __init__(self, *args, **kwargs) -> None:
