@@ -62,7 +62,7 @@ class EndorsementSerializer(serializers.ModelSerializer):
             endorser_user_id=obj.endorser_user_id,
         ).count()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if not self.context.get(INCLUDE_ENDORSER_AUTHOR_CTX_KEY):
             self.fields.pop("endorser_author", None)
@@ -85,7 +85,7 @@ class EndorsementCreateSerializer(serializers.ModelSerializer):
             )
         ]
 
-    def validate(self, attrs):
+    def validate(self, attrs) -> dict:
         if attrs["endorser_user"] == attrs["endorsed_user"]:
             raise serializers.ValidationError(
                 {"endorsed_user": "You cannot endorse yourself."}
@@ -93,7 +93,7 @@ class EndorsementCreateSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         # serialize all fields
         return EndorsementSerializer(instance, context=self.context).data
 
@@ -109,6 +109,6 @@ class EndorsementUpdateSerializer(serializers.ModelSerializer):
         model = Endorsement
         fields = '__all__'
 
-    def to_representation(self, instance):
+    def to_representation(self, instance) -> dict:
         # serialize all fields
         return EndorsementSerializer(instance, context=self.context).data

@@ -1,6 +1,8 @@
-from django.db.models import Count, Exists, OuterRef, Subquery
+from typing import Any, override
+
+from django.db.models import Count, Exists, OuterRef, Subquery, QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
@@ -20,7 +22,7 @@ class IsEndorsementOwner(BasePermission):
     """
     Custom permission to restrict non-safe methods to the current user's endorsements.
     """
-    def has_object_permission(self, request, view, obj):
+    def has_object_permission(self, request, view, obj) -> bool:
         if request.method in SAFE_METHODS:
             return True
 
@@ -39,6 +41,12 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     Ex: GET /api/endorsements/?endorsed_user=1&include_endorser_author=true
 
     Results are paginated and ordered by creation date in descending order.
+
+    Cache is enabled for GET /api/endorsements/ only and has the following properties:
+    - cache key based on normalized query parameters;
+    - only the first page of results per cache key is cached;
+    - cache TTL is kept short at 5 minutes;
+    - any operation that modifies endorsements invalidates the cache.
     """
     queryset = Endorsement.objects.all().order_by("-created_date")
     filter_backends = [DjangoFilterBackend]
@@ -46,7 +54,7 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly, IsEndorsementOwner]
     REQUIRED_LIST_FILTERS = ("endorsed_user", "endorser_user")
 
-    def _ensure_required_list_filter_present(self):
+    def _ensure_required_list_filter_present(self) -> None:
         has_required_filter = any(
             self.request.query_params.get(param)
             for param in self.REQUIRED_LIST_FILTERS
@@ -65,7 +73,8 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         param = self.request.query_params.get("include_endorser_author", "false")
         return param.lower() == "true"
 
-    def get_queryset(self):
+    @override
+    def get_queryset(self) -> QuerySet:
         # queryset for checking reciprocal endorsements
         reciprocal_endorsement_qs = Endorsement.objects.filter(
             endorser_user_id=OuterRef("endorsed_user_id"),
@@ -95,12 +104,25 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    def get_serializer_context(self):
+    @override
+    def get_serializer_class(self) -> type[serializers.Serializer]:
+        if self.action == "create":
+            return EndorsementCreateSerializer
+
+        if self.action in ["partial_update", "update"]:
+            return EndorsementUpdateSerializer
+
+        return EndorsementSerializer
+
+
+    @override
+    def get_serializer_context(self) -> dict[str, Any]:
         ctx = super().get_serializer_context()
         ctx[INCLUDE_ENDORSER_AUTHOR_CTX_KEY] = self._is_include_endorser_author()
         return ctx
 
-    def list(self, request, *args, **kwargs):
+    @override
+    def list(self, request, *args, **kwargs) -> Response:
         self._ensure_required_list_filter_present()
 
         # return cached response if present
@@ -120,23 +142,17 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         response["RH-Cache"] = "miss"
         return response
 
-    def get_serializer_class(self):
-        if self.action == "create":
-            return EndorsementCreateSerializer
-
-        if self.action in ["partial_update", "update"]:
-            return EndorsementUpdateSerializer
-
-        return EndorsementSerializer
-
-    def perform_create(self, serializer):
+    @override
+    def perform_create(self, serializer) -> None:
         super().perform_create(serializer)
         bump_list_cache_version()
 
-    def perform_update(self, serializer):
+    @override
+    def perform_update(self, serializer) -> None:
         super().perform_update(serializer)
         bump_list_cache_version()
 
-    def perform_destroy(self, instance):
+    @override
+    def perform_destroy(self, instance) -> None:
         super().perform_destroy(instance)
         bump_list_cache_version()
