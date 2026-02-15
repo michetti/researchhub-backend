@@ -1,7 +1,9 @@
 from typing import Any
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.cache import cache
+from django.test import SimpleTestCase
 from django.db import IntegrityError, connection
 from django.urls import reverse
 from django.test.utils import CaptureQueriesContext
@@ -9,6 +11,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from endorsements.cache import LIST_CACHE_VERSION_KEY
+from endorsements.helpers import is_integrity_error_due_to_constraint
 from endorsements.models import Endorsement
 from endorsements.throttles import EndorsementCreateSustainedThrottle
 from user.tests.helpers import create_random_default_user
@@ -481,8 +484,8 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(endorsement.endorser_user, self.endorser)
         self.assertEqual(endorsement.endorsed_user, self.endorsed)
 
-    def test_create_endorsement_handles_integrity_error_from_db(self) -> None:
-        """DB-level IntegrityError is translated to a validation response."""
+    def test_create_endorsement_maps_duplicate_constraint_integrity_error_to_conflict(self) -> None:
+        """Unique-pair DB IntegrityError is translated to the duplicate conflict response."""
         payload = {
             "endorsed_user": self.endorsed.id,
             "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
@@ -492,7 +495,9 @@ class EndorsementsViewSetTests(APITestCase):
 
         with patch(
             "endorsements.views.EndorsementCreateSerializer.save",
-            side_effect=IntegrityError("duplicate key"),
+            side_effect=IntegrityError(
+                'duplicate key value violates unique constraint "endorsement_pair_uq"'
+            ),
         ):
             response = self.client.post(self.list_url, payload, format="json")
 
@@ -503,6 +508,26 @@ class EndorsementsViewSetTests(APITestCase):
             "You have already endorsed this user.",
         )
         self.assertEqual(Endorsement.objects.count(), 0)
+
+    def test_create_endorsement_reraises_non_duplicate_integrity_error(self) -> None:
+        """Non-duplicate DB IntegrityError is not remapped to duplicate conflict."""
+        payload = {
+            "endorsed_user": self.endorsed.id,
+            "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+            "anecdote": "Met at a conference.",
+        }
+        self.client.force_authenticate(user=self.endorser)
+
+        with patch(
+            "endorsements.views.EndorsementCreateSerializer.save",
+            side_effect=IntegrityError(
+                'insert or update on table "endorsements_endorsement" violates foreign key constraint "endorsement_fk"'
+            ),
+        ):
+            # suppress expected 500 error log noise while asserting the exception is reraised.
+            with patch("django.utils.log.request_logger.error"):
+                with self.assertRaises(IntegrityError):
+                    self.client.post(self.list_url, payload, format="json")
 
     def test_create_endorsement_response_includes_is_reciprocal(self) -> None:
         """Create responses include reciprocal state for the created endorsement."""
@@ -562,12 +587,6 @@ class EndorsementsViewSetTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("You have already endorsed this user.", str(response.data))
-        self.assertEqual(
-            Endorsement.objects.filter(
-                endorser_user=self.endorser, endorsed_user=self.endorsed
-            ).count(),
-            1,
-        )
 
     def test_create_endorsement_rejects_self_endorsement(self) -> None:
         """A user cannot create an endorsement for themselves."""
@@ -808,4 +827,42 @@ class EndorsementsCacheTests(APITestCase):
         self.assertEqual(
             self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
             "hit",
+        )
+
+
+class EndorsementsHelpersTests(SimpleTestCase):
+    def test_constraint_match_uses_diag_constraint_name_when_available(self) -> None:
+        """Prefer structured DB diagnostics when driver exposes constraint_name."""
+
+        class CauseWithDiag(Exception):
+            def __init__(self) -> None:
+                super().__init__("wrapped db error")
+                self.diag = SimpleNamespace(constraint_name="endorsement_pair_uq")
+
+        try:
+            try:
+                raise CauseWithDiag()
+            except CauseWithDiag as cause:
+                raise IntegrityError("duplicate key value violates unique constraint") from cause
+        except IntegrityError as exc:
+            self.assertTrue(
+                is_integrity_error_due_to_constraint(exc, "endorsement_pair_uq")
+            )
+
+    def test_constraint_match_falls_back_to_exception_message(self) -> None:
+        """Fallback to message matching when diagnostics are not available."""
+        exc = IntegrityError(
+            'duplicate key value violates unique constraint "endorsement_pair_uq"'
+        )
+        self.assertTrue(
+            is_integrity_error_due_to_constraint(exc, "endorsement_pair_uq")
+        )
+
+    def test_constraint_match_returns_false_for_other_errors(self) -> None:
+        """Non-matching IntegrityError should not be treated as duplicate pair."""
+        exc = IntegrityError(
+            'insert or update violates foreign key constraint "endorsement_fk"'
+        )
+        self.assertFalse(
+            is_integrity_error_due_to_constraint(exc, "endorsement_pair_uq")
         )

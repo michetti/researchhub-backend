@@ -15,6 +15,7 @@ from endorsements.cache import (
     get_list_cache_key,
     set_cached_list_response,
 )
+from endorsements.helpers import is_integrity_error_due_to_constraint
 from endorsements.models import Endorsement
 from endorsements.serializers import (
     INCLUDE_ENDORSER_AUTHOR_CTX_KEY,
@@ -27,6 +28,9 @@ from endorsements.throttles import (
     EndorsementCreateBurstThrottle,
     EndorsementCreateSustainedThrottle,
 )
+
+ENDORSEMENT_PAIR_UNIQUE_CONSTRAINT = "endorsement_pair_uq"
+
 
 class IsEndorsementOwner(BasePermission):
     """
@@ -177,7 +181,9 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         try:
             super().perform_create(serializer)
         except IntegrityError as exc:
-            raise AlreadyEndorsedConflict() from exc
+            if is_integrity_error_due_to_constraint(exc, ENDORSEMENT_PAIR_UNIQUE_CONSTRAINT):
+                raise AlreadyEndorsedConflict() from exc
+            raise
 
         bump_list_cache_version()
 
