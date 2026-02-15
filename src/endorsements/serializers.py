@@ -19,7 +19,7 @@ class EndorsementSerializer(serializers.ModelSerializer):
     Serializer for the Endorsement model with support for including the endorser's author profile.
     """
     is_reciprocal = serializers.SerializerMethodField()
-    authority_score = serializers.SerializerMethodField()
+    endorser_in_degree = serializers.SerializerMethodField()
     endorser_author = DynamicAuthorSerializer(
         source="endorser_user.author_profile",
         read_only=True,
@@ -40,7 +40,7 @@ class EndorsementSerializer(serializers.ModelSerializer):
             "is_reciprocal",
             "qualifier",
             "anecdote",
-            "authority_score",
+            "endorser_in_degree",
             "created_date",
             "updated_date",
             "endorser_author",
@@ -59,10 +59,10 @@ class EndorsementSerializer(serializers.ModelSerializer):
         ).exists()
 
     @staticmethod
-    def get_authority_score(obj) -> int:
+    def get_endorser_in_degree(obj) -> int:
         # prefer queryset annotation to avoid per-row lookups on list / retrieve endpoints.
-        if hasattr(obj, "authority_score"):
-            return int(obj.authority_score or 0)
+        if hasattr(obj, "endorser_in_degree"):
+            return int(obj.endorser_in_degree or 0)
 
         # fallback to manual count if queryset annotation is not available.
         return Endorsement.objects.filter(

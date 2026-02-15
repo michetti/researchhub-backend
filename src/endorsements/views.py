@@ -103,8 +103,8 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
             endorsed_user_id=OuterRef("endorser_user_id"),
         )
 
-        # queryset for calculating endorser authority score based on endorsements received
-        endorser_authority_score_qs = (
+        # queryset for calculating endorser in-degree based on endorsements received
+        endorser_in_degree_qs = (
             Endorsement.objects.filter(endorsed_user_id=OuterRef("endorser_user_id"))
             .order_by()  # safeguard to ensure no ordering in case it's set elsewhere (Meta.ordering, for example)
             .values("endorsed_user_id")
@@ -115,7 +115,7 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         # base queryset with relationship annotations
         qs = Endorsement.objects.annotate(
             is_reciprocal=Exists(reciprocal_endorsement_qs),
-            authority_score=Coalesce(Subquery(endorser_authority_score_qs), Value(0)),
+            endorser_in_degree=Coalesce(Subquery(endorser_in_degree_qs), Value(0)),
         ).order_by("-created_date")
 
         if self._is_include_endorser_author():

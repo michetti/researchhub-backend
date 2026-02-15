@@ -209,8 +209,8 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertIn("is_reciprocal", first_result)
         self.assertTrue(first_result["is_reciprocal"])
 
-    def test_list_endorsements_includes_authority_score(self) -> None:
-        """Authority score reflects endorsements received by the endorser user."""
+    def test_list_endorsements_includes_endorser_in_degree(self) -> None:
+        """Endorser in-degree reflects endorsements received by the endorser user."""
         fixture = self._create_filter_fixture_endorsements()
 
         response = self.client.get(
@@ -218,11 +218,11 @@ class EndorsementsViewSetTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        score_by_id = {
-            item["id"]: item["authority_score"] for item in _results(response)
+        in_degree_by_id = {
+            item["id"]: item["endorser_in_degree"] for item in _results(response)
         }
-        self.assertEqual(score_by_id[fixture["endorsement_1"].id], 0)
-        self.assertEqual(score_by_id[fixture["endorsement_3"].id], 1)
+        self.assertEqual(in_degree_by_id[fixture["endorsement_1"].id], 0)
+        self.assertEqual(in_degree_by_id[fixture["endorsement_3"].id], 1)
 
     def test_list_endorsements_includes_endorser_author_when_requested(self) -> None:
         """Endorser author payload is included when include_endorser_author=true."""
@@ -575,8 +575,8 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertIn("is_reciprocal", response.data)
         self.assertTrue(response.data["is_reciprocal"])
 
-    def test_create_endorsement_response_includes_authority_score(self) -> None:
-        """Create responses include authority score based on endorsements received by the endorser user."""
+    def test_create_endorsement_response_includes_endorser_in_degree(self) -> None:
+        """Create responses include endorser in-degree based on endorsements received by the endorser user."""
         Endorsement.objects.create(
             endorser_user=self.other_user,
             endorsed_user=self.endorser,
@@ -592,8 +592,8 @@ class EndorsementsViewSetTests(APITestCase):
         response = self.client.post(self.list_url, payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn("authority_score", response.data)
-        self.assertEqual(response.data["authority_score"], 1)
+        self.assertIn("endorser_in_degree", response.data)
+        self.assertEqual(response.data["endorser_in_degree"], 1)
 
     def test_create_endorsement_rejects_duplicate_for_same_user_pair(self) -> None:
         """A user cannot endorse the same person more than once."""
