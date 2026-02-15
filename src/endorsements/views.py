@@ -1,9 +1,16 @@
 from django.db.models import Count, Exists, OuterRef, Subquery
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
+from rest_framework.response import Response
 
+from endorsements.cache import (
+    bump_list_cache_version,
+    get_cached_list_response,
+    get_list_cache_key,
+    set_cached_list_response,
+)
 from endorsements.models import Endorsement
 from endorsements.serializers import EndorsementSerializer, EndorsementUpdateSerializer, \
     EndorsementCreateSerializer, INCLUDE_ENDORSER_AUTHOR_CTX_KEY
@@ -95,7 +102,23 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         self._ensure_required_list_filter_present()
-        return super().list(request, *args, **kwargs)
+
+        # return cached response if present
+        cache_key = get_list_cache_key(request)
+        cached_response = get_cached_list_response(cache_key)
+        if cached_response is not None:
+            response = Response(cached_response)
+            response["RH-Cache"] = "hit"
+            return response
+
+        response = super().list(request, *args, **kwargs)
+
+        # cache response if successful
+        if cache_key is not None and response.status_code == status.HTTP_200_OK:
+            set_cached_list_response(cache_key, response.data)
+
+        response["RH-Cache"] = "miss"
+        return response
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -107,4 +130,13 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         return EndorsementSerializer
 
     def perform_create(self, serializer):
-        serializer.save(endorser_user=self.request.user)
+        super().perform_create(serializer)
+        bump_list_cache_version()
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        bump_list_cache_version()
+
+    def perform_destroy(self, instance):
+        super().perform_destroy(instance)
+        bump_list_cache_version()

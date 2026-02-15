@@ -15,3 +15,5 @@
 - Returning `authority_score` field in the response as a way to indicate how meaningful the endorsement is. For now, 
   it is based on the number of endorsements for the endorsed user. Later it should be changed to a more sophisticated 
   calculation based on PageRank, for example.
+- Implemented caching for endorsements list endpoint. Decided to go with a TTL of 5 minutes and cache only the first 
+  page of results. The cache key is based on a prefix and the normalized query parameters.

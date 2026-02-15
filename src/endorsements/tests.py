@@ -1,9 +1,11 @@
+from django.core.cache import cache
 from django.db import connection
 from django.urls import reverse
 from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from endorsements.cache import LIST_CACHE_VERSION_KEY
 from endorsements.models import Endorsement
 from user.tests.helpers import create_random_default_user
 
@@ -472,3 +474,142 @@ class EndorsementsViewSetTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Endorsement.objects.filter(id=endorsement.id).exists())
+
+
+class EndorsementsCacheTests(APITestCase):
+    """Behavioral tests for endorsements list caching and invalidation."""
+
+    def setUp(self):
+        cache.clear()
+        self.endorser = create_random_default_user("cache-endorser")
+        self.endorsed = create_random_default_user("cache-endorsed")
+        self.other_user = create_random_default_user("cache-other")
+        self.list_url = reverse("endorsements-list")
+
+        self.endorsement = Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+            anecdote="Initial cached endorsement.",
+        )
+        self.detail_url = reverse(
+            "endorsements-detail",
+            kwargs={"pk": self.endorsement.id},
+        )
+
+    def tearDown(self):
+        cache.clear()
+
+    def _list_for_endorsed_user(self, endorsed_user_id, **params):
+        query_params = {"endorsed_user": endorsed_user_id, **params}
+        return self.client.get(self.list_url, query_params, format="json")
+
+    def test_list_page_1_cache_hit_after_initial_miss(self):
+        """Page 1 list responses should be cached after the first request."""
+        response_1 = self._list_for_endorsed_user(self.endorsed.id)
+        response_2 = self._list_for_endorsed_user(self.endorsed.id)
+
+        self.assertEqual(response_1.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_1["RH-Cache"], "miss")
+        self.assertEqual(response_2["RH-Cache"], "hit")
+
+    def test_list_page_2_is_not_cached(self):
+        """Only the first page is cache-eligible for endorsements list."""
+        # Default pagination size is 10. Create enough rows so page 2 is valid.
+        for idx in range(10):
+            Endorsement.objects.create(
+                endorser_user=create_random_default_user(f"page-two-endorser-{idx}"),
+                endorsed_user=self.endorsed,
+                qualifier=Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+            )
+
+        response_1 = self._list_for_endorsed_user(self.endorsed.id, page=2)
+        response_2 = self._list_for_endorsed_user(self.endorsed.id, page=2)
+
+        self.assertEqual(response_1.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_1["RH-Cache"], "miss")
+        self.assertEqual(response_2["RH-Cache"], "miss")
+        self.assertIsNone(cache.get(LIST_CACHE_VERSION_KEY))
+
+    def test_create_bumps_list_cache_generation(self):
+        """Creating an endorsement invalidates existing cached list responses."""
+        self._list_for_endorsed_user(self.endorsed.id)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
+        current_version = cache.get(LIST_CACHE_VERSION_KEY)
+
+        self.client.force_authenticate(user=self.other_user)
+        create_response = self.client.post(
+            self.list_url,
+            {
+                "endorsed_user": self.endorsed.id,
+                "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                "anecdote": "Cache invalidation via create.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(cache.get(LIST_CACHE_VERSION_KEY), current_version + 1)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "miss",
+        )
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
+
+    def test_update_bumps_list_cache_generation(self):
+        """Updating an endorsement invalidates existing cached list responses."""
+        self._list_for_endorsed_user(self.endorsed.id)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
+        current_version = cache.get(LIST_CACHE_VERSION_KEY)
+
+        self.client.force_authenticate(user=self.endorser)
+        update_response = self.client.patch(
+            self.detail_url,
+            {"anecdote": "Cache invalidation via update."},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(cache.get(LIST_CACHE_VERSION_KEY), current_version + 1)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "miss",
+        )
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
+
+    def test_delete_bumps_list_cache_generation(self):
+        """Deleting an endorsement invalidates existing cached list responses."""
+        self._list_for_endorsed_user(self.endorsed.id)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
+        current_version = cache.get(LIST_CACHE_VERSION_KEY)
+
+        self.client.force_authenticate(user=self.endorser)
+        delete_response = self.client.delete(self.detail_url)
+
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(cache.get(LIST_CACHE_VERSION_KEY), current_version + 1)
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "miss",
+        )
+        self.assertEqual(
+            self._list_for_endorsed_user(self.endorsed.id)["RH-Cache"],
+            "hit",
+        )
