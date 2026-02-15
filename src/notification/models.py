@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.fields import ArrayField, HStoreField
 from django.db import models
 
+from researchhub.settings import BASE_FRONTEND_URL
 from researchhub_document.related_models.researchhub_unified_document_model import (
     ResearchhubUnifiedDocument,
 )
@@ -16,6 +17,7 @@ class Notification(models.Model):
     COMMENT = "COMMENT"
     COMMENT_ON_COMMENT = "COMMENT_ON_COMMENT"
     COMMENT_USER_MENTION = "COMMENT_USER_MENTION"
+    ENDORSEMENT_RECEIVED = "ENDORSEMENT_RECEIVED"
     THREAD_ON_DOC = "THREAD_ON_DOC"
     COMMENT_ON_THREAD = "COMMENT_ON_THREAD"
     REPLY_ON_THREAD = "REPLY_ON_THREAD"
@@ -59,6 +61,7 @@ class Notification(models.Model):
         (COMMENT, COMMENT),
         (COMMENT_ON_COMMENT, COMMENT_ON_COMMENT),
         (COMMENT_USER_MENTION, COMMENT_USER_MENTION),
+        (ENDORSEMENT_RECEIVED, ENDORSEMENT_RECEIVED),
         (BOUNTY_PAYOUT, BOUNTY_PAYOUT),
         (BOUNTY_FOR_YOU, BOUNTY_FOR_YOU),
         (ACCOUNT_VERIFIED, ACCOUNT_VERIFIED),
@@ -521,6 +524,33 @@ class Notification(models.Model):
                 "extra": '["link"]',
             },
         ], comments_url
+
+    def _format_endorsement_received(self):
+        action_user = self.action_user
+        action_user_name = action_user.full_name().strip()
+        if not action_user_name:
+            action_user_name = action_user.email or "Someone"
+
+        profile_url = action_user.frontend_view_link()
+        endorsement = self.item
+        author_profile = getattr(self.recipient, "author_profile", None)
+        if author_profile:
+            endorsement_url = f"{BASE_FRONTEND_URL}/author/{author_profile.id}"
+            endorsement_url += "?tab=endorsements"
+            if endorsement and getattr(endorsement, "id", None):
+                endorsement_url += f"&endorsement={endorsement.id}"
+        else:
+            endorsement_url = profile_url
+
+        return [
+            {
+                "type": "link",
+                "value": f"{action_user_name}",
+                "extra": '["bold", "link"]',
+                "link": profile_url,
+            },
+            {"type": "text", "value": "endorsed you"},
+        ], endorsement_url
 
     def _format_bounty_payout(self):
         unified_document = self.unified_document

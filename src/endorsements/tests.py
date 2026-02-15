@@ -14,6 +14,7 @@ from endorsements.cache import LIST_CACHE_VERSION_KEY
 from endorsements.helpers import is_integrity_error_due_to_constraint
 from endorsements.models import Endorsement
 from endorsements.throttles import EndorsementCreateSustainedThrottle
+from notification.models import Notification
 from user.tests.helpers import create_random_default_user
 
 
@@ -483,6 +484,31 @@ class EndorsementsViewSetTests(APITestCase):
         endorsement = Endorsement.objects.get(id=response.data["id"])
         self.assertEqual(endorsement.endorser_user, self.endorser)
         self.assertEqual(endorsement.endorsed_user, self.endorsed)
+
+    @patch("notification.models.Notification.send_notification")
+    def test_create_endorsement_sends_endorsement_received_notification(
+        self,
+        mock_send_notification,
+    ) -> None:
+        """Creating an endorsement notifies the endorsed user."""
+        payload = {
+            "endorsed_user": self.endorsed.id,
+            "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+            "anecdote": "Met at a conference.",
+        }
+        self.client.force_authenticate(user=self.endorser)
+
+        response = self.client.post(self.list_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        notification = Notification.objects.get(
+            notification_type=Notification.ENDORSEMENT_RECEIVED,
+            recipient=self.endorsed,
+            action_user=self.endorser,
+            object_id=response.data["id"],
+        )
+        self.assertEqual(notification.item.id, response.data["id"])
+        mock_send_notification.assert_called_once()
 
     def test_create_endorsement_maps_duplicate_constraint_integrity_error_to_conflict(self) -> None:
         """Unique-pair DB IntegrityError is translated to the duplicate conflict response."""

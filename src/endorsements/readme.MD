@@ -14,3 +14,5 @@
 - Added type hints and `@override` annotations, following patterns in newer code.
 - Added create-only per-user throttling with burst and daily limits to reduce spam while keeping reads unrestricted.
 - Added serializer-level `AlreadyEndorsedConflict` (`409`) and reused it in `perform_create` so duplicate endorsement errors are consistent across pre-save validation and DB race-condition (`IntegrityError`) paths.
+- Considered deleting `ENDORSEMENT_RECEIVED` notifications when an endorsement is removed, and it likely makes sense 
+  for data hygiene; deferred for now because I could not find existing production patterns in the codebase for deleting notifications tied to deleted items.

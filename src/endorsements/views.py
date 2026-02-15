@@ -7,6 +7,7 @@ from rest_framework import status, viewsets, serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticatedOrReadOnly
+from rest_framework.request import Request
 from rest_framework.response import Response
 
 from endorsements.cache import (
@@ -28,6 +29,7 @@ from endorsements.throttles import (
     EndorsementCreateBurstThrottle,
     EndorsementCreateSustainedThrottle,
 )
+from notification.models import Notification
 
 ENDORSEMENT_PAIR_UNIQUE_CONSTRAINT = "endorsement_pair_uq"
 
@@ -148,7 +150,7 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         return ctx
 
     @action(detail=False, methods=["get"], url_path="qualifiers", url_name="qualifiers")
-    def qualifiers(self, request, *args, **kwargs) -> Response:
+    def qualifiers(self, request: Request, *args, **kwargs) -> Response:
         data = [
             {"code": code, "label": label}
             for code, label in Endorsement.Qualifier.choices
@@ -156,7 +158,7 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         return Response(data)
 
     @override
-    def list(self, request, *args, **kwargs) -> Response:
+    def list(self, request: Request, *args, **kwargs) -> Response:
         self._ensure_required_list_filter_present()
 
         # return cached response if present
@@ -177,18 +179,27 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
         return response
 
     @override
-    def perform_create(self, serializer) -> None:
+    def perform_create(self, serializer: EndorsementCreateSerializer) -> None:
         try:
-            super().perform_create(serializer)
+            endorsement = serializer.save()
         except IntegrityError as exc:
             if is_integrity_error_due_to_constraint(exc, ENDORSEMENT_PAIR_UNIQUE_CONSTRAINT):
                 raise AlreadyEndorsedConflict() from exc
             raise
 
+        # evict list cache
         bump_list_cache_version()
 
+        # send notification to endorsed user
+        Notification.objects.create(
+            item=endorsement,
+            notification_type=Notification.ENDORSEMENT_RECEIVED,
+            recipient=endorsement.endorsed_user,
+            action_user=endorsement.endorser_user,
+        ).send_notification()
+
     @override
-    def perform_update(self, serializer) -> None:
+    def perform_update(self, serializer: EndorsementUpdateSerializer) -> None:
         super().perform_update(serializer)
         bump_list_cache_version()
 
