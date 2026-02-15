@@ -10,6 +10,7 @@ from rest_framework.test import APITestCase
 
 from endorsements.cache import LIST_CACHE_VERSION_KEY
 from endorsements.models import Endorsement
+from endorsements.throttles import EndorsementCreateSustainedThrottle
 from user.tests.helpers import create_random_default_user
 
 
@@ -270,6 +271,32 @@ class EndorsementsViewSetTests(APITestCase):
         )
         self.assertTrue(all("endorser_author" in item for item in results))
 
+    def test_retrieve_endorsement_includes_endorser_author_when_requested(self) -> None:
+        """Retrieve includes endorser author when include_endorser_author=true."""
+        endorsement = Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        detail_url = reverse("endorsements-detail", kwargs={"pk": endorsement.id})
+
+        response = self.client.get(
+            detail_url,
+            {"include_endorser_author": "true"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("endorser_author", response.data)
+        self.assertEqual(
+            set(response.data["endorser_author"].keys()),
+            {"id", "first_name", "last_name", "profile_image"},
+        )
+        self.assertEqual(
+            response.data["endorser_author"]["id"],
+            self.endorser.author_profile.id,
+        )
+
     def test_include_endorser_author_query_count_is_constant_as_results_grow(self) -> None:
         """Including endorser author should not introduce per-row query growth."""
         small_endorsed_user = create_random_default_user("small-endorsed")
@@ -399,6 +426,44 @@ class EndorsementsViewSetTests(APITestCase):
             format="json",
         )
         self.assertEqual(other_user_response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_endorsement_is_throttled_after_sustained_limit(self) -> None:
+        """Creating more than 30 endorsements in a day should be throttled."""
+        cache.clear()
+        self.client.force_authenticate(user=self.endorser)
+
+        with patch(
+            "endorsements.views.EndorsementsViewSet.CREATE_THROTTLE_CLASSES",
+            [EndorsementCreateSustainedThrottle],
+        ):
+            for idx in range(30):
+                target_user = create_random_default_user(f"sustained-target-{idx}")
+                response = self.client.post(
+                    self.list_url,
+                    {
+                        "endorsed_user": target_user.id,
+                        "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                        "anecdote": f"Sustained throttle seed {idx}",
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            throttled_target = create_random_default_user("sustained-target-throttled")
+            throttled_response = self.client.post(
+                self.list_url,
+                {
+                    "endorsed_user": throttled_target.id,
+                    "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                    "anecdote": "This request should be throttled by sustained limit.",
+                },
+                format="json",
+            )
+
+        self.assertEqual(
+            throttled_response.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
 
     def test_create_endorsement_uses_authenticated_user_as_endorser(self) -> None:
         """The API uses the logged-in user as the endorser."""
