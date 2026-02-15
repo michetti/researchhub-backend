@@ -13,7 +13,7 @@
 - Considered always including `endorser_author` in the response to simplify the code, but decided to make it an 
   optional parameter instead to make the API more flexible.
 - Returning `authority_score` field in the response as a way to indicate how meaningful the endorsement is. For now, 
-  it is based on the number of endorsements for the endorsed user. Later it should be changed to a more sophisticated 
+  it is based on the number of endorsements for the endorser user. Later it should be changed to a more sophisticated 
   calculation based on PageRank, for example.
 - Implemented caching for endorsements list endpoint. Decided to go with a TTL of 5 minutes and cache only the first 
   page of results. The cache key is based on a prefix and the normalized query parameters.
