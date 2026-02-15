@@ -298,6 +298,86 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(Endorsement.objects.count(), 0)
 
+    def test_create_endorsement_is_throttled_after_burst_limit(self) -> None:
+        """Creating too many endorsements in a short window should be throttled."""
+        cache.clear()
+        self.client.force_authenticate(user=self.endorser)
+
+        for idx in range(3):
+            target_user = create_random_default_user(f"throttle-target-{idx}")
+            response = self.client.post(
+                self.list_url,
+                {
+                    "endorsed_user": target_user.id,
+                    "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                    "anecdote": f"Burst throttle seed {idx}",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        throttled_target = create_random_default_user("throttle-target-throttled")
+        throttled_response = self.client.post(
+            self.list_url,
+            {
+                "endorsed_user": throttled_target.id,
+                "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                "anecdote": "This request should be throttled.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            throttled_response.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    def test_create_endorsement_throttle_is_scoped_per_endorser(self) -> None:
+        """One user's throttle state should not block another user's create."""
+        cache.clear()
+
+        self.client.force_authenticate(user=self.endorser)
+        for idx in range(3):
+            target_user = create_random_default_user(f"per-user-throttle-{idx}")
+            response = self.client.post(
+                self.list_url,
+                {
+                    "endorsed_user": target_user.id,
+                    "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                    "anecdote": f"Seed endorsement {idx}",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        throttled_target = create_random_default_user("per-user-throttle-throttled")
+        throttled_response = self.client.post(
+            self.list_url,
+            {
+                "endorsed_user": throttled_target.id,
+                "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                "anecdote": "Should be throttled for first user.",
+            },
+            format="json",
+        )
+        self.assertEqual(
+            throttled_response.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+        self.client.force_authenticate(user=self.other_user)
+        other_user_target = create_random_default_user("per-user-throttle-other")
+        other_user_response = self.client.post(
+            self.list_url,
+            {
+                "endorsed_user": other_user_target.id,
+                "qualifier": Endorsement.Qualifier.ACTIVE_IN_SAME_COMMUNITY,
+                "anecdote": "Second user should not be throttled.",
+            },
+            format="json",
+        )
+        self.assertEqual(other_user_response.status_code, status.HTTP_201_CREATED)
+
     def test_create_endorsement_uses_authenticated_user_as_endorser(self) -> None:
         """The API uses the logged-in user as the endorser."""
         payload = {

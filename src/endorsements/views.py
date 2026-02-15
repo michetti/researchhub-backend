@@ -16,6 +16,10 @@ from endorsements.cache import (
 from endorsements.models import Endorsement
 from endorsements.serializers import EndorsementSerializer, EndorsementUpdateSerializer, \
     EndorsementCreateSerializer, INCLUDE_ENDORSER_AUTHOR_CTX_KEY
+from endorsements.throttles import (
+    EndorsementCreateBurstThrottle,
+    EndorsementCreateSustainedThrottle,
+)
 
 
 class IsEndorsementOwner(BasePermission):
@@ -53,6 +57,10 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     filterset_fields = ['endorser_user', 'endorsed_user']
     permission_classes = [IsAuthenticatedOrReadOnly, IsEndorsementOwner]
     REQUIRED_LIST_FILTERS = ("endorsed_user", "endorser_user")
+    CREATE_THROTTLE_CLASSES = [
+        EndorsementCreateBurstThrottle,
+        EndorsementCreateSustainedThrottle,
+    ]
 
     def _ensure_required_list_filter_present(self) -> None:
         has_required_filter = any(
@@ -114,6 +122,13 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
 
         return EndorsementSerializer
 
+    @override
+    def get_throttles(self):
+        # Rate-limit endorsement creation to reduce automated spam.
+        if self.action == "create":
+            return [throttle() for throttle in self.CREATE_THROTTLE_CLASSES]
+
+        return super().get_throttles()
 
     @override
     def get_serializer_context(self) -> dict[str, Any]:

@@ -17,4 +17,5 @@
   calculation based on PageRank, for example.
 - Implemented caching for endorsements list endpoint. Decided to go with a TTL of 5 minutes and cache only the first 
   page of results. The cache key is based on a prefix and the normalized query parameters.
-- Added type hints and override annotations as newer code seems to be using them.
+- Added type hints and override annotations as the newer code seems to be using them.
+- Added create-only per-user throttling with burst and daily limits to prevent spam while keeping reads unrestricted.
