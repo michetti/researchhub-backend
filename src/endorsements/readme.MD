@@ -19,3 +19,5 @@
   page of results. The cache key is based on a prefix and the normalized query parameters.
 - Added type hints and override annotations as the newer code seems to be using them.
 - Added create-only per-user throttling with burst and daily limits to prevent spam while keeping reads unrestricted.
+- Added a serializer-level `AlreadyEndorsedConflict` (`409`) and reused it in `perform_create` so duplicate endorsement
+  errors are consistent for both pre-save validation and DB race-condition (`IntegrityError`) paths.

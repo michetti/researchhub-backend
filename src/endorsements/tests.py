@@ -1,7 +1,8 @@
 from typing import Any
+from unittest.mock import patch
 
 from django.core.cache import cache
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.urls import reverse
 from django.test.utils import CaptureQueriesContext
 from rest_framework import status
@@ -415,6 +416,29 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(endorsement.endorser_user, self.endorser)
         self.assertEqual(endorsement.endorsed_user, self.endorsed)
 
+    def test_create_endorsement_handles_integrity_error_from_db(self) -> None:
+        """DB-level IntegrityError is translated to a validation response."""
+        payload = {
+            "endorsed_user": self.endorsed.id,
+            "qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT,
+            "anecdote": "Met at a conference.",
+        }
+        self.client.force_authenticate(user=self.endorser)
+
+        with patch(
+            "endorsements.views.EndorsementCreateSerializer.save",
+            side_effect=IntegrityError("duplicate key"),
+        ):
+            response = self.client.post(self.list_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("endorsed_user", response.data)
+        self.assertEqual(
+            str(response.data["endorsed_user"]),
+            "You have already endorsed this user.",
+        )
+        self.assertEqual(Endorsement.objects.count(), 0)
+
     def test_create_endorsement_response_includes_is_reciprocal(self) -> None:
         """Create responses include reciprocal state for the created endorsement."""
         Endorsement.objects.create(
@@ -471,7 +495,7 @@ class EndorsementsViewSetTests(APITestCase):
 
         response = self.client.post(self.list_url, payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("You have already endorsed this user.", str(response.data))
         self.assertEqual(
             Endorsement.objects.filter(

@@ -1,5 +1,6 @@
 from typing import Any, override
 
+from django.db import IntegrityError
 from django.db.models import Count, Exists, OuterRef, Subquery, QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, serializers
@@ -15,13 +16,17 @@ from endorsements.cache import (
     set_cached_list_response,
 )
 from endorsements.models import Endorsement
-from endorsements.serializers import EndorsementSerializer, EndorsementUpdateSerializer, \
-    EndorsementCreateSerializer, INCLUDE_ENDORSER_AUTHOR_CTX_KEY
+from endorsements.serializers import (
+    INCLUDE_ENDORSER_AUTHOR_CTX_KEY,
+    AlreadyEndorsedConflict,
+    EndorsementCreateSerializer,
+    EndorsementSerializer,
+    EndorsementUpdateSerializer,
+)
 from endorsements.throttles import (
     EndorsementCreateBurstThrottle,
     EndorsementCreateSustainedThrottle,
 )
-
 
 class IsEndorsementOwner(BasePermission):
     """
@@ -168,7 +173,11 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
 
     @override
     def perform_create(self, serializer) -> None:
-        super().perform_create(serializer)
+        try:
+            super().perform_create(serializer)
+        except IntegrityError as exc:
+            raise AlreadyEndorsedConflict() from exc
+
         bump_list_cache_version()
 
     @override

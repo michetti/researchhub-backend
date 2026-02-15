@@ -1,10 +1,17 @@
-from rest_framework import serializers
-from rest_framework.validators import UniqueTogetherValidator
+from rest_framework import serializers, status
+from rest_framework.exceptions import APIException
 
 from endorsements.models import Endorsement
 from user.serializers import DynamicAuthorSerializer
 
 INCLUDE_ENDORSER_AUTHOR_CTX_KEY = "include_endorser_author"
+ALREADY_ENDORSED_MESSAGE = "You have already endorsed this user."
+
+
+class AlreadyEndorsedConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = {"endorsed_user": ALREADY_ENDORSED_MESSAGE}
+    default_code = "already_endorsed"
 
 
 class EndorsementSerializer(serializers.ModelSerializer):
@@ -85,19 +92,19 @@ class EndorsementCreateSerializer(serializers.ModelSerializer):
             "created_date",
             "updated_date",
         ]
-        validators = [
-            UniqueTogetherValidator(
-                queryset=Endorsement.objects.all(),
-                fields=["endorser_user", "endorsed_user"],
-                message="You have already endorsed this user.",
-            )
-        ]
+        validators = []
 
     def validate(self, attrs) -> dict:
         if attrs["endorser_user"] == attrs["endorsed_user"]:
             raise serializers.ValidationError(
                 {"endorsed_user": "You cannot endorse yourself."}
             )
+
+        if Endorsement.objects.filter(
+            endorser_user=attrs["endorser_user"],
+            endorsed_user=attrs["endorsed_user"],
+        ).exists():
+            raise AlreadyEndorsedConflict()
 
         return attrs
 
