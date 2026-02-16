@@ -7,7 +7,6 @@ The endorsements view extends _ModelViewSet_, so it is pretty straightforward fo
 - `GET /api/endorsements/{id}` - get a single endorsement by ID;
 - `POST /api/endorsements/` - create an endorsement;
 - `PATCH /api/endorsements/{id}` - update an endorsement by ID;
-- `PUT /api/endorsements/{id}` - replace an endorsement by ID;
 - `DELETE /api/endorsements/{id}` - delete an endorsement by ID.
 
 Most responses return the following JSON representing the endorsement:

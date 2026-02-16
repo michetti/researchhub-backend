@@ -661,6 +661,31 @@ class EndorsementsViewSetTests(APITestCase):
         self.assertEqual(endorsement.endorser_user, self.endorser)
         self.assertEqual(endorsement.endorsed_user, self.endorsed)
 
+    def test_put_update_endorsement_not_allowed(self) -> None:
+        """Full replacement via PUT is not supported for endorsements."""
+        endorsement = Endorsement.objects.create(
+            endorser_user=self.endorser,
+            endorsed_user=self.endorsed,
+            qualifier=Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+            anecdote="Initial anecdote.",
+        )
+        detail_url = reverse("endorsements-detail", kwargs={"pk": endorsement.id})
+        self.client.force_authenticate(user=self.endorser)
+
+        response = self.client.put(
+            detail_url,
+            {"qualifier": Endorsement.Qualifier.MET_AT_CONFERENCE_OR_EVENT},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        endorsement.refresh_from_db()
+        self.assertEqual(
+            endorsement.qualifier,
+            Endorsement.Qualifier.COLLABORATED_ON_RESEARCH,
+        )
+        self.assertEqual(endorsement.anecdote, "Initial anecdote.")
+
     def test_update_endorsement_forbidden_for_non_owner(self) -> None:
         """Non-owners cannot update someone else's endorsement."""
         endorsement = Endorsement.objects.create(

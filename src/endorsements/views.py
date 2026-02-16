@@ -63,10 +63,11 @@ class EndorsementsViewSet(viewsets.ModelViewSet):
     - cache key based on normalized query parameters;
     - only the first page of results per cache key is cached;
     - cache TTL is kept short at 5 minutes;
-    - create, update, patch, and delete operations invalidate the cache;
+    - create, patch, and delete operations invalidate the cache;
     - keep in mind that changes elsewhere (admin/shell/tasks/raw SQL) will not invalidate the cache.
     """
     queryset = Endorsement.objects.all().order_by("-created_date")
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['endorser_user', 'endorsed_user']
     permission_classes = [IsAuthenticatedOrReadOnly, IsEndorsementOwner]
