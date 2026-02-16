@@ -251,6 +251,7 @@ INSTALLED_APPS = [
     "analytics",
     "personalize",
     "discussion",
+    "endorsements",
     "feed",
     "institution",
     "topic",
